@@ -24,9 +24,6 @@ module Homebrew
              description: "List only formulae, or treat all named arguments as formulae."
       switch "--cask", "--casks",
              description: "List only casks, or treat all named arguments as casks."
-      switch "--unbrewed",
-             description: "List files in Homebrew's prefix not installed by Homebrew.",
-             replacement: "`brew --prefix --unbrewed`"
       switch "--full-name",
              description: "Print formulae with fully-qualified names. Unless `--full-name`, `--versions` "\
                           "or `--pinned` are passed, other options (i.e. `-1`, `-l`, `-r` and `-t`) are "\
@@ -45,30 +42,25 @@ module Homebrew
              description: "Force output to be one entry per line. " \
                           "This is the default when output is not to a terminal."
       switch "-l",
-             depends_on:  "--formula",
-             description: "List formulae in long format."
+             description: "List formulae and/or casks in long format. " \
+                          "Has no effect when a formula or cask name is passed as an argument."
       switch "-r",
-             depends_on:  "--formula",
-             description: "Reverse the order of the formulae sort to list the oldest entries first."
+             description: "Reverse the order of the formulae and/or casks sort to list the oldest entries first. " \
+                          "Has no effect when a formula or cask name is passed as an argument."
       switch "-t",
-             depends_on:  "--formula",
-             description: "Sort formulae by time modified, listing most recently modified first."
+             description: "Sort formulae and/or casks by time modified, listing most recently modified first. " \
+                          "Has no effect when a formula or cask name is passed as an argument."
 
       conflicts "--formula", "--cask"
-      conflicts "--full-name", "--versions"
+      conflicts "--pinned", "--cask"
+      conflicts "--multiple", "--cask"
       conflicts "--pinned", "--multiple"
-      conflicts "--cask", "--multiple"
-      ["--formula", "--cask", "--full-name", "--versions", "--pinned"].each do |flag|
-        conflicts "--unbrewed", flag
-      end
       ["-1", "-l", "-r", "-t"].each do |flag|
-        conflicts "--unbrewed", flag
         conflicts "--versions", flag
         conflicts "--pinned", flag
       end
-      ["--pinned", "-l", "-r", "-t"].each do |flag|
+      ["--versions", "--pinned", "-l", "-r", "-t"].each do |flag|
         conflicts "--full-name", flag
-        conflicts "--cask", flag
       end
 
       named_args [:installed_formula, :installed_cask]
@@ -90,7 +82,7 @@ module Homebrew
       unless args.cask?
         formula_names = args.no_named? ? Formula.installed : args.named.to_resolved_formulae
         full_formula_names = formula_names.map(&:full_name).sort(&tap_and_name_comparison)
-        full_formula_names = Formatter.columns(full_formula_names) unless args.public_send(:'1?')
+        full_formula_names = Formatter.columns(full_formula_names) unless args.public_send(:"1?")
         puts full_formula_names if full_formula_names.present?
       end
       if args.cask? || (!args.formula? && args.no_named?)
@@ -100,28 +92,45 @@ module Homebrew
           args.named.to_formulae_and_casks(only: :cask, method: :resolve)
         end
         full_cask_names = cask_names.map(&:full_name).sort(&tap_and_name_comparison)
-        full_cask_names = Formatter.columns(full_cask_names) unless args.public_send(:'1?')
+        full_cask_names = Formatter.columns(full_cask_names) unless args.public_send(:"1?")
         puts full_cask_names if full_cask_names.present?
       end
-    elsif args.cask?
-      list_casks(args: args)
-    elsif args.pinned? || args.versions?
-      filtered_list args: args
+    elsif args.pinned?
+      filtered_list(args: args)
+    elsif args.versions?
+      filtered_list(args: args) unless args.cask?
+      list_casks(args: args) if args.cask? || (!args.formula? && !args.multiple? && args.no_named?)
     elsif args.no_named?
       ENV["CLICOLOR"] = nil
 
       ls_args = []
-      ls_args << "-1" if args.public_send(:'1?')
+      ls_args << "-1" if args.public_send(:"1?")
       ls_args << "-l" if args.l?
       ls_args << "-r" if args.r?
       ls_args << "-t" if args.t?
 
-      safe_system "ls", *ls_args, HOMEBREW_CELLAR unless args.cask?
-      list_casks(args: args) unless args.formula?
-    elsif args.verbose? || !$stdout.tty?
-      system_command! "find", args: args.named.to_kegs.map(&:to_s) + %w[-not -type d -print], print_stdout: true
+      if !args.cask? && HOMEBREW_CELLAR.exist? && HOMEBREW_CELLAR.children.any?
+        ohai "Formulae" if $stdout.tty? && !args.formula?
+        safe_system "ls", *ls_args, HOMEBREW_CELLAR
+      end
+      if !args.formula? && Cask::Caskroom.any_casks_installed?
+        if $stdout.tty? && !args.cask?
+          puts
+          ohai "Casks"
+        end
+        safe_system "ls", *ls_args, Cask::Caskroom.path
+      end
     else
-      args.named.to_kegs.each { |keg| PrettyListing.new keg }
+      kegs, casks = args.named.to_kegs_to_casks
+
+      if args.verbose? || !$stdout.tty?
+        find_args = %w[-not -type d -not -name .DS_Store -print]
+        system_command! "find", args: kegs.map(&:to_s) + find_args, print_stdout: true if kegs.present?
+        system_command! "find", args: casks.map(&:caskroom_path) + find_args, print_stdout: true if casks.present?
+      else
+        kegs.each { |keg| PrettyListing.new keg } if kegs.present?
+        list_casks(args: args) if casks.present?
+      end
     end
   end
 
@@ -155,12 +164,19 @@ module Homebrew
   end
 
   def list_casks(args:)
+    casks = if args.no_named?
+      Cask::Caskroom.casks
+    else
+      args.named.dup.delete_if do |n|
+        Homebrew.failed = true unless Cask::Caskroom.path.join(n).exist?
+        !Cask::Caskroom.path.join(n).exist?
+      end.to_formulae_and_casks(only: :cask)
+    end
     Cask::Cmd::List.list_casks(
-      *args.named.to_casks,
-      one:       args.public_send(:'1?'),
+      *casks,
+      one:       args.public_send(:"1?"),
       full_name: args.full_name?,
       versions:  args.versions?,
-      args:      args,
     )
   end
 end

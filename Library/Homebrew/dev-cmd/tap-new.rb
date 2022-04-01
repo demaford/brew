@@ -22,9 +22,10 @@ module Homebrew
       flag   "--pull-label=",
              description: "Label name for pull requests ready to be pulled (default: `pr-pull`)."
       flag   "--branch=",
-             description: "Initialize Git repository with the specified branch name (default: `main`)."
-
-      conflicts "--no-git", "--branch"
+             description: "Initialize Git repository and setup GitHub Actions workflows with the " \
+                          "specified branch name (default: `main`)."
+      switch "--github-packages",
+             description: "Upload bottles to GitHub Packages."
 
       named_args :tap, number: 1
     end
@@ -37,12 +38,13 @@ module Homebrew
     branch = args.branch || "main"
 
     tap = args.named.to_taps.first
-    odie "Invalid tap name '#{tap_name}'" unless tap.path.to_s.match?(HOMEBREW_TAP_PATH_REGEX)
+    odie "Invalid tap name '#{tap}'" unless tap.path.to_s.match?(HOMEBREW_TAP_PATH_REGEX)
 
     titleized_user = tap.user.dup
     titleized_repo = tap.repo.dup
     titleized_user[0] = titleized_user[0].upcase
     titleized_repo[0] = titleized_repo[0].upcase
+    root_url = GitHubPackages.root_url(tap.user, "homebrew-#{tap.repo}") if args.github_packages?
 
     (tap.path/"Formula").mkpath
 
@@ -50,11 +52,13 @@ module Homebrew
       # #{titleized_user} #{titleized_repo}
 
       ## How do I install these formulae?
+
       `brew install #{tap}/<formula>`
 
       Or `brew tap #{tap}` and then `brew install <formula>`.
 
       ## Documentation
+
       `brew help`, `man brew` or check [Homebrew's documentation](https://docs.brew.sh).
     MARKDOWN
     write_path(tap, "README.md", readme)
@@ -63,13 +67,14 @@ module Homebrew
       name: brew test-bot
       on:
         push:
-          branches: #{branch}
+          branches:
+            - #{branch}
         pull_request:
       jobs:
         test-bot:
           strategy:
             matrix:
-              os: [ubuntu-latest, macOS-latest]
+              os: [ubuntu-latest, macos-latest]
           runs-on: ${{ matrix.os }}
           steps:
             - name: Set up Homebrew
@@ -94,7 +99,7 @@ module Homebrew
 
             - run: brew test-bot --only-tap-syntax
 
-            - run: brew test-bot --only-formulae
+            - run: brew test-bot --only-formulae#{" --root-url=#{root_url}" if root_url}
               if: github.event_name == 'pull_request'
 
             - name: Upload bottles as artifact
@@ -125,6 +130,8 @@ module Homebrew
             - name: Pull bottles
               env:
                 HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+                HOMEBREW_GITHUB_PACKAGES_TOKEN: ${{ github.token }}
+                HOMEBREW_GITHUB_PACKAGES_USER: ${{ github.actor }}
                 PULL_REQUEST: ${{ github.event.pull_request.number }}
               run: brew pr-pull --debug --tap=$GITHUB_REPOSITORY $PULL_REQUEST
 
@@ -147,6 +154,9 @@ module Homebrew
 
     unless args.no_git?
       cd tap.path do
+        Utils::Git.set_name_email!
+        Utils::Git.setup_gpg!
+
         # Would be nice to use --initial-branch here but it's not available in
         # older versions of Git that we support.
         safe_system "git", "-c", "init.defaultBranch=#{branch}", "init"

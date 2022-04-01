@@ -27,15 +27,24 @@ module UnpackStrategy
               .returns(SystemCommand::Result)
     }
     def extract_to_dir(unpack_dir, basename:, verbose:)
-      quiet_flags = verbose ? [] : ["-qq"]
-      result = system_command! "unzip",
-                               args:         [*quiet_flags, "-o", path, "-d", unpack_dir],
-                               verbose:      verbose,
-                               print_stderr: false
+      unzip = begin
+        Formula["unzip"]
+      rescue FormulaUnavailableError
+        nil
+      end
 
-      FileUtils.rm_rf unpack_dir/"__MACOSX"
+      with_env(TZ: "UTC") do
+        quiet_flags = verbose ? [] : ["-qq"]
+        result = system_command! "unzip",
+                                 args:         [*quiet_flags, "-o", path, "-d", unpack_dir],
+                                 env:          { "PATH" => PATH.new(unzip&.opt_bin, ENV["PATH"]) },
+                                 verbose:      verbose,
+                                 print_stderr: false
 
-      result
+        FileUtils.rm_rf unpack_dir/"__MACOSX"
+
+        result
+      end
     end
   end
 end

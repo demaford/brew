@@ -1,6 +1,8 @@
 # typed: false
 # frozen_string_literal: true
 
+require "time"
+
 require "utils/analytics"
 require "utils/curl"
 require "utils/fork"
@@ -16,7 +18,6 @@ require "utils/repology"
 require "utils/svn"
 require "utils/tty"
 require "tap_constants"
-require "time"
 
 module Homebrew
   extend Context
@@ -111,24 +112,6 @@ module Kernel
     puts sput
   end
 
-  def ohai_stdout_or_stderr(message, *sput)
-    if $stdout.tty?
-      ohai(message, *sput)
-    else
-      $stderr.puts(ohai_title(message))
-      $stderr.puts(sput)
-    end
-  end
-
-  def puts_stdout_or_stderr(*message)
-    message = "\n" if message.empty?
-    if $stdout.tty?
-      puts(message)
-    else
-      $stderr.puts(message)
-    end
-  end
-
   def odebug(title, *sput, always_display: false)
     debug = if respond_to?(:debug)
       debug?
@@ -206,7 +189,7 @@ module Kernel
 
     # Don't throw deprecations at all for cached, .brew or .metadata files.
     return if backtrace.any? do |line|
-      next true if line.include?(HOMEBREW_CACHE)
+      next true if line.include?(HOMEBREW_CACHE.to_s)
       next true if line.include?("/.brew/")
       next true if line.include?("/.metadata/")
 
@@ -362,8 +345,8 @@ module Kernel
     editor = Homebrew::EnvConfig.editor
     return editor if editor
 
-    # Find Atom, Sublime Text, Textmate, BBEdit / TextWrangler, or vim
-    editor = %w[atom subl mate edit vim].find do |candidate|
+    # Find Atom, Sublime Text, VS Code, Textmate, BBEdit / TextWrangler, or vim
+    editor = %w[atom subl code mate edit vim].find do |candidate|
       candidate if which(candidate, ENV["HOMEBREW_PATH"])
     end
     editor ||= "vim"
@@ -389,7 +372,9 @@ module Kernel
 
     ENV["DISPLAY"] = Homebrew::EnvConfig.display
 
-    safe_system(browser, *args)
+    with_env(DBUS_SESSION_BUS_ADDRESS: ENV["HOMEBREW_DBUS_SESSION_BUS_ADDRESS"]) do
+      safe_system(browser, *args)
+    end
   end
 
   # GZips the given paths, and returns the gzipped paths.
@@ -398,14 +383,6 @@ module Kernel
       safe_system "gzip", path
       Pathname.new("#{path}.gz")
     end
-  end
-
-  # Returns array of architectures that the given command or library is built for.
-  def archs_for_command(cmd)
-    odeprecated "archs_for_command"
-
-    cmd = which(cmd) unless Pathname.new(cmd).absolute?
-    Pathname.new(cmd).archs
   end
 
   def ignore_interrupts(_opt = nil)
@@ -444,19 +421,75 @@ module Kernel
     $stderr = old
   end
 
-  def nostdout
+  def nostdout(&block)
     if verbose?
       yield
     else
-      begin
-        out = $stdout.dup
-        $stdout.reopen(File::NULL)
-        yield
-      ensure
-        $stdout.reopen(out)
-        out.close
+      redirect_stdout(File::NULL, &block)
+    end
+  end
+
+  def redirect_stdout(file)
+    out = $stdout.dup
+    $stdout.reopen(file)
+    yield
+  ensure
+    $stdout.reopen(out)
+    out.close
+  end
+
+  # Ensure the given formula is installed
+  # This is useful for installing a utility formula (e.g. `shellcheck` for `brew style`)
+  def ensure_formula_installed!(formula_or_name, reason: "", latest: false,
+                                output_to_stderr: true, quiet: false)
+    if output_to_stderr || quiet
+      file = if quiet
+        File::NULL
+      else
+        $stderr
+      end
+      # Call this method itself with redirected stdout
+      redirect_stdout(file) do
+        return ensure_formula_installed!(formula_or_name, latest: latest,
+                                         reason: reason, output_to_stderr: false)
       end
     end
+
+    require "formula"
+
+    formula = if formula_or_name.is_a?(Formula)
+      formula_or_name
+    else
+      Formula[formula_or_name]
+    end
+
+    reason = " for #{reason}" if reason.present?
+
+    unless formula.any_version_installed?
+      ohai "Installing `#{formula.name}`#{reason}..."
+      safe_system HOMEBREW_BREW_FILE, "install", "--formula", formula.full_name
+    end
+
+    if latest && !formula.latest_version_installed?
+      ohai "Upgrading `#{formula.name}`#{reason}..."
+      safe_system HOMEBREW_BREW_FILE, "upgrade", "--formula", formula.full_name
+    end
+
+    formula
+  end
+
+  # Ensure the given executable is exist otherwise install the brewed version
+  def ensure_executable!(name, formula_name = nil, reason: "")
+    formula_name ||= name
+
+    executable = [
+      which(name),
+      which(name, ENV["HOMEBREW_PATH"]),
+      HOMEBREW_PREFIX/"bin/#{name}",
+    ].compact.first
+    return executable if executable.exist?
+
+    ensure_formula_installed!(formula_name, reason: reason).opt_bin/name
   end
 
   def paths
@@ -465,6 +498,13 @@ module Kernel
     rescue ArgumentError
       onoe "The following PATH component is invalid: #{p}"
     end.uniq.compact
+  end
+
+  def parse_author!(author)
+    /^(?<name>[^<]+?)[ \t]*<(?<email>[^>]+?)>$/ =~ author
+    raise UsageError, "Unable to parse name and email." if name.blank? && email.blank?
+
+    { name: name, email: email }
   end
 
   def disk_usage_readable(size_in_bytes)

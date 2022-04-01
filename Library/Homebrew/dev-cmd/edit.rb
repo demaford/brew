@@ -21,6 +21,8 @@ module Homebrew
              description: "Treat all named arguments as formulae."
       switch "--cask", "--casks",
              description: "Treat all named arguments as casks."
+      switch "--print-path",
+             description: "Print the file path to be edited, without opening an editor."
 
       conflicts "--formula", "--cask"
 
@@ -40,16 +42,29 @@ module Homebrew
       EOS
     end
 
-    paths = args.named.to_paths.select do |path|
-      next path if path.exist?
+    paths = if args.named.empty?
+      # Sublime requires opting into the project editing path,
+      # as opposed to VS Code which will infer from the .vscode path
+      if which_editor == "subl"
+        ["--project", "#{HOMEBREW_REPOSITORY}/.sublime/homebrew.sublime-project"]
+      else
+        # If no formulae are listed, open the project root in an editor.
+        [HOMEBREW_REPOSITORY]
+      end
+    else
+      args.named.to_paths.select do |path|
+        next path if path.exist?
 
-      raise UsageError, "#{path} doesn't exist on disk. " \
-                        "Run #{Formatter.identifier("brew create --set-name #{path.basename} $URL")} " \
-                        "to create a new formula!"
-    end.presence
+        raise UsageError, "#{path} doesn't exist on disk. " \
+                          "Run #{Formatter.identifier("brew create --set-name #{path.basename} $URL")} " \
+                          "to create a new formula!"
+      end.presence
+    end
 
-    # If no formulae are listed, open the project root in an editor.
-    paths ||= [HOMEBREW_REPOSITORY]
+    if args.print_path?
+      paths.each(&method(:puts))
+      return
+    end
 
     exec_editor(*paths)
   end

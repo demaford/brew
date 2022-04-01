@@ -28,9 +28,43 @@ describe Livecheck do
   end
   let(:livecheckable_c) { described_class.new(c) }
 
+  describe "#formula" do
+    it "returns nil if not set" do
+      expect(livecheckable_f.formula).to be_nil
+    end
+
+    it "returns the String if set" do
+      livecheckable_f.formula("other-formula")
+      expect(livecheckable_f.formula).to eq("other-formula")
+    end
+
+    it "raises a TypeError if the argument isn't a String" do
+      expect {
+        livecheckable_f.formula(123)
+      }.to raise_error(TypeError, "Livecheck#formula expects a String")
+    end
+  end
+
+  describe "#cask" do
+    it "returns nil if not set" do
+      expect(livecheckable_c.cask).to be_nil
+    end
+
+    it "returns the String if set" do
+      livecheckable_c.cask("other-cask")
+      expect(livecheckable_c.cask).to eq("other-cask")
+    end
+
+    it "raises a TypeError if the argument isn't a String" do
+      expect {
+        livecheckable_c.cask(123)
+      }.to raise_error(TypeError, "Livecheck#cask expects a String")
+    end
+  end
+
   describe "#regex" do
     it "returns nil if not set" do
-      expect(livecheckable_f.regex).to be nil
+      expect(livecheckable_f.regex).to be_nil
     end
 
     it "returns the Regexp if set" do
@@ -49,7 +83,7 @@ describe Livecheck do
     it "sets @skip to true when no argument is provided" do
       expect(livecheckable_f.skip).to be true
       expect(livecheckable_f.instance_variable_get(:@skip)).to be true
-      expect(livecheckable_f.instance_variable_get(:@skip_msg)).to be nil
+      expect(livecheckable_f.instance_variable_get(:@skip_msg)).to be_nil
     end
 
     it "sets @skip to true and @skip_msg to the provided String" do
@@ -76,7 +110,7 @@ describe Livecheck do
 
   describe "#strategy" do
     it "returns nil if not set" do
-      expect(livecheckable_f.strategy).to be nil
+      expect(livecheckable_f.strategy).to be_nil
     end
 
     it "returns the Symbol if set" do
@@ -95,7 +129,7 @@ describe Livecheck do
     let(:url_string) { "https://brew.sh" }
 
     it "returns nil if not set" do
-      expect(livecheckable_f.url).to be nil
+      expect(livecheckable_f.url).to be_nil
     end
 
     it "returns a string when set to a string" do
@@ -128,6 +162,8 @@ describe Livecheck do
     it "returns a Hash of all instance variables" do
       expect(livecheckable_f.to_hash).to eq(
         {
+          "cask"     => nil,
+          "formula"  => nil,
           "regex"    => nil,
           "skip"     => false,
           "skip_msg" => nil,

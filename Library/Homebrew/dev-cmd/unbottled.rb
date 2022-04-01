@@ -3,6 +3,7 @@
 
 require "cli/parser"
 require "formula"
+require "api"
 
 module Homebrew
   extend T::Sig
@@ -19,10 +20,11 @@ module Homebrew
              description: "Use the specified bottle tag (e.g. `big_sur`) instead of the current OS."
       switch "--dependents",
              description: "Skip getting analytics data and sort by number of dependents instead."
-      switch "--total",
+      switch "--all", "--total",
              description: "Print the number of unbottled and total formulae."
 
-      conflicts "--dependents", "--total"
+      conflicts "--dependents", "--all"
+      conflicts "--installed", "--all"
 
       named_args :formula
     end
@@ -34,12 +36,18 @@ module Homebrew
 
     Formulary.enable_factory_cache!
 
-    @bottle_tag = args.tag.presence&.to_sym || Utils::Bottles.tag
+    @bottle_tag = if (tag = args.tag)
+      Utils::Bottles::Tag.from_symbol(tag.to_sym)
+    else
+      Utils::Bottles.tag
+    end
+
+    # TODO: 3.6.0: odeprecate args.total?
 
     if args.named.blank?
       ohai "Getting formulae..."
-    elsif args.total?
-      raise UsageError, "cannot specify `<formula>` and `--total`."
+    elsif args.all?
+      raise UsageError, "cannot specify `<formula>` and `--all`/`--total`."
     end
 
     formulae, all_formulae, formula_installs =
@@ -54,7 +62,7 @@ module Homebrew
       end.reverse
     end
 
-    if args.total?
+    if args.all?
       output_total(formulae)
       return
     end
@@ -73,17 +81,18 @@ module Homebrew
   def formulae_all_installs_from_args(args)
     if args.named.present?
       formulae = all_formulae = args.named.to_formulae
-    elsif args.total?
-      formulae = all_formulae = Formula.to_a
+    elsif args.all?
+      formulae = all_formulae = Formula.all
     elsif args.dependents?
-      formulae = all_formulae = Formula.to_a
+      # TODO: 3.6.0: odeprecate not specifying args.all? for args.dependents?
+      formulae = all_formulae = Formula.all
 
-      @sort = " (sorted by installs in the last 90 days)"
+      @sort = " (sorted by number of dependents)"
     else
       formula_installs = {}
 
       ohai "Getting analytics data..."
-      analytics = Utils::Analytics.formulae_brew_sh_json("analytics/install/90d.json")
+      analytics = Homebrew::API::Analytics.fetch "install", 90
 
       if analytics.blank?
         raise UsageError,
@@ -103,7 +112,7 @@ module Homebrew
           nil
         end
       end.compact
-      @sort = " (sorted by installs in the last 90 days)"
+      @sort = " (sorted by installs in the last 90 days; top 10,000 only)"
 
       all_formulae = Formula
     end
@@ -118,8 +127,6 @@ module Homebrew
     uses_hash = {}
 
     all_formulae.each do |f|
-      next unless f.core_formula?
-
       deps = f.recursive_dependencies do |_, dep|
         Dependency.prune if dep.optional?
       end.map(&:to_formula)
@@ -154,20 +161,43 @@ module Homebrew
 
     formulae.each do |f|
       name = f.name.downcase
-      if f.bottle_specification.tag?(@bottle_tag)
-        puts "#{Tty.bold}#{Tty.green}#{name}#{Tty.reset}: already bottled" if any_named_args
+
+      if f.disabled?
+        puts "#{Tty.bold}#{Tty.green}#{name}#{Tty.reset}: formula disabled" if any_named_args
         next
       end
 
-      requirement_classes = f.recursive_requirements.map(&:class)
-      if @bottle_tag.to_s.end_with?("_linux")
-        if requirement_classes.include?(MacOSRequirement)
+      requirements = f.recursive_requirements
+      if @bottle_tag.linux?
+        if requirements.any? { |r| r.is_a?(MacOSRequirement) && !r.version }
           puts "#{Tty.bold}#{Tty.red}#{name}#{Tty.reset}: requires macOS" if any_named_args
           next
         end
-      elsif requirement_classes.include?(LinuxRequirement)
+      elsif requirements.any?(LinuxRequirement)
         puts "#{Tty.bold}#{Tty.red}#{name}#{Tty.reset}: requires Linux" if any_named_args
         next
+      else
+        macos_version = @bottle_tag.to_macos_version
+        macos_satisfied = requirements.all? do |r|
+          case r
+          when MacOSRequirement
+            next true unless r.version_specified?
+
+            macos_version.public_send(r.comparator, r.version)
+          when XcodeRequirement
+            next true unless r.version
+
+            Version.new(MacOS::Xcode.latest_version(macos: macos_version)) >= r.version
+          when ArchRequirement
+            r.arch == @bottle_tag.arch
+          else
+            true
+          end
+        end
+        unless macos_satisfied
+          puts "#{Tty.bold}#{Tty.red}#{name}#{Tty.reset}: doesn't support this macOS" if any_named_args
+          next
+        end
       end
 
       if f.bottle_unneeded? || f.bottle_disabled?
@@ -180,8 +210,13 @@ module Homebrew
         next
       end
 
+      if f.bottle_specification.tag?(@bottle_tag, no_older_versions: true)
+        puts "#{Tty.bold}#{Tty.green}#{name}#{Tty.reset}: already bottled" if any_named_args
+        next
+      end
+
       deps = Array(deps_hash[f.name]).reject do |dep|
-        dep.bottle_specification.tag?(@bottle_tag) || dep.bottle_unneeded?
+        dep.bottle_specification.tag?(@bottle_tag, no_older_versions: true) || dep.bottle_unneeded?
       end
 
       if deps.blank?

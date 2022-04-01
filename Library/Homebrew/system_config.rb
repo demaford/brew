@@ -32,19 +32,24 @@ module SystemConfig
       end
     end
 
+    sig { returns(Pathname) }
+    def homebrew_repo
+      HOMEBREW_REPOSITORY.dup.extend(GitRepositoryExtension)
+    end
+
     sig { returns(String) }
     def head
-      HOMEBREW_REPOSITORY.git_head || "(none)"
+      homebrew_repo.git_head || "(none)"
     end
 
     sig { returns(String) }
     def last_commit
-      HOMEBREW_REPOSITORY.git_last_commit || "never"
+      homebrew_repo.git_last_commit || "never"
     end
 
     sig { returns(String) }
     def origin
-      HOMEBREW_REPOSITORY.git_origin || "(none)"
+      homebrew_repo.git_origin || "(none)"
     end
 
     sig { returns(String) }
@@ -71,8 +76,11 @@ module SystemConfig
     def describe_clang
       return "N/A" if clang.null?
 
-      clang_build_info = clang_build.null? ? "(parse error)" : clang_build
-      "#{clang} build #{clang_build_info}"
+      if clang_build.null?
+        clang.to_s
+      else
+        "#{clang} build #{clang_build}"
+      end
     end
 
     def describe_path(path)
@@ -125,7 +133,7 @@ module SystemConfig
       out, = system_command(curl_executable, args: ["--version"], verbose: false)
 
       if /^curl (?<curl_version>[\d.]+)/ =~ out
-        "#{curl_version} => #{curl_executable}"
+        "#{curl_version} => #{curl_path}"
       else
         "N/A"
       end

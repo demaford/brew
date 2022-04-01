@@ -5,7 +5,7 @@ describe Cask::DSL, :cask do
   let(:cask) { Cask::CaskLoader.load(cask_path(token.to_s)) }
   let(:token) { "basic-cask" }
 
-  context "stanzas" do
+  describe "stanzas" do
     it "lets you set url, homepage, and version" do
       expect(cask.url.to_s).to eq("https://brew.sh/TestCask-1.2.3.dmg")
       expect(cask.homepage).to eq("https://brew.sh/")
@@ -168,37 +168,37 @@ describe Cask::DSL, :cask do
         cask.config = config
       end
 
-      context "to 'zh'" do
+      describe "to 'zh'" do
         let(:languages) { ["zh"] }
 
         it { is_expected.to be_the_chinese_version }
       end
 
-      context "to 'zh-XX'" do
+      describe "to 'zh-XX'" do
         let(:languages) { ["zh-XX"] }
 
         it { is_expected.to be_the_chinese_version }
       end
 
-      context "to 'en'" do
+      describe "to 'en'" do
         let(:languages) { ["en"] }
 
         it { is_expected.to be_the_english_version }
       end
 
-      context "to 'xx-XX'" do
+      describe "to 'xx-XX'" do
         let(:languages) { ["xx-XX"] }
 
         it { is_expected.to be_the_english_version }
       end
 
-      context "to 'xx-XX,zh,en'" do
+      describe "to 'xx-XX,zh,en'" do
         let(:languages) { ["xx-XX", "zh", "en"] }
 
         it { is_expected.to be_the_chinese_version }
       end
 
-      context "to 'xx-XX,en-US,zh'" do
+      describe "to 'xx-XX,en-US,zh'" do
         let(:languages) { ["xx-XX", "en-US", "zh"] }
 
         it { is_expected.to be_the_english_version }
@@ -342,7 +342,7 @@ describe Cask::DSL, :cask do
       let(:token) { "with-depends-on-formula" }
 
       it "allows depends_on formula to be specified" do
-        expect(cask.depends_on.formula).not_to be nil
+        expect(cask.depends_on.formula).not_to be_nil
       end
     end
 
@@ -350,31 +350,31 @@ describe Cask::DSL, :cask do
       let(:token) { "with-depends-on-formula-multiple" }
 
       it "allows multiple depends_on formula to be specified" do
-        expect(cask.depends_on.formula).not_to be nil
+        expect(cask.depends_on.formula).not_to be_nil
       end
     end
   end
 
   describe "depends_on cask" do
-    context "specifying one" do
+    context "with a single cask" do
       let(:token) { "with-depends-on-cask" }
 
       it "is allowed" do
-        expect(cask.depends_on.cask).not_to be nil
+        expect(cask.depends_on.cask).not_to be_nil
       end
     end
 
-    context "specifying multiple" do
+    context "when specifying multiple" do
       let(:token) { "with-depends-on-cask-multiple" }
 
       it "is allowed" do
-        expect(cask.depends_on.cask).not_to be nil
+        expect(cask.depends_on.cask).not_to be_nil
       end
     end
   end
 
   describe "depends_on macos" do
-    context "invalid depends_on macos value" do
+    context "when the depends_on macos value is invalid" do
       let(:token) { "invalid/invalid-depends-on-macos-bad-release" }
 
       it "refuses to load" do
@@ -382,7 +382,7 @@ describe Cask::DSL, :cask do
       end
     end
 
-    context "conflicting depends_on macos forms" do
+    context "when there are conflicting depends_on macos forms" do
       let(:token) { "invalid/invalid-depends-on-macos-conflicting-forms" }
 
       it "refuses to load" do
@@ -392,15 +392,15 @@ describe Cask::DSL, :cask do
   end
 
   describe "depends_on arch" do
-    context "valid" do
+    context "when valid" do
       let(:token) { "with-depends-on-arch" }
 
       it "is allowed to be specified" do
-        expect(cask.depends_on.arch).not_to be nil
+        expect(cask.depends_on.arch).not_to be_nil
       end
     end
 
-    context "invalid depends_on arch value" do
+    context "with invalid depends_on arch value" do
       let(:token) { "invalid/invalid-depends-on-arch-value" }
 
       it "refuses to load" do
@@ -409,18 +409,8 @@ describe Cask::DSL, :cask do
     end
   end
 
-  describe "depends_on x11" do
-    context "invalid depends_on x11 value" do
-      let(:token) { "invalid/invalid-depends-on-x11-value" }
-
-      it "refuses to load" do
-        expect { cask }.to raise_error(Cask::CaskInvalidError)
-      end
-    end
-  end
-
   describe "conflicts_with stanza" do
-    context "valid" do
+    context "when valid" do
       let(:token) { "with-conflicts-with" }
 
       it "allows conflicts_with stanza to be specified" do
@@ -428,7 +418,7 @@ describe Cask::DSL, :cask do
       end
     end
 
-    context "invalid conflicts_with key" do
+    context "with invalid conflicts_with key" do
       let(:token) { "invalid/invalid-conflicts-with-key" }
 
       it "refuses to load invalid conflicts_with key" do
@@ -438,7 +428,7 @@ describe Cask::DSL, :cask do
   end
 
   describe "installer stanza" do
-    context "script" do
+    context "when script" do
       let(:token) { "with-installer-script" }
 
       it "allows installer script to be specified" do
@@ -449,7 +439,7 @@ describe Cask::DSL, :cask do
       end
     end
 
-    context "manual" do
+    context "when manual" do
       let(:token) { "with-installer-manual" }
 
       it "allows installer manual to be specified" do
@@ -487,7 +477,7 @@ describe Cask::DSL, :cask do
   end
 
   describe "#appdir" do
-    context "interpolation of the appdir in stanzas" do
+    context "with interpolation of the appdir in stanzas" do
       let(:token) { "appdir-interpolation" }
 
       it "is allowed" do

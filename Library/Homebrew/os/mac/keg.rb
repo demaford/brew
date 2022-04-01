@@ -7,8 +7,8 @@ class Keg
 
     @require_relocation = true
     odebug "Changing dylib ID of #{file}\n  from #{file.dylib_id}\n    to #{id}"
-    MachO::Tools.change_dylib_id(file, id, strict: false)
-    apply_ad_hoc_signature(file)
+    file.change_dylib_id(id, strict: false)
+    codesign_patched_binary(file)
   rescue MachO::MachOError
     onoe <<~EOS
       Failed changing dylib ID of #{file}
@@ -23,8 +23,8 @@ class Keg
 
     @require_relocation = true
     odebug "Changing install name in #{file}\n  from #{old}\n    to #{new}"
-    MachO::Tools.change_install_name(file, old, new, strict: false)
-    apply_ad_hoc_signature(file)
+    file.change_install_name(old, new, strict: false)
+    codesign_patched_binary(file)
   rescue MachO::MachOError
     onoe <<~EOS
       Failed changing install name in #{file}
@@ -34,7 +34,34 @@ class Keg
     raise
   end
 
-  def apply_ad_hoc_signature(file)
+  def change_rpath(old, new, file)
+    return if old == new
+
+    @require_relocation = true
+    odebug "Changing rpath in #{file}\n  from #{old}\n    to #{new}"
+    file.change_rpath(old, new, strict: false)
+    codesign_patched_binary(file)
+  rescue MachO::MachOError
+    onoe <<~EOS
+      Failed changing rpath in #{file}
+        from #{old}
+          to #{new}
+    EOS
+    raise
+  end
+
+  def delete_rpath(rpath, file)
+    odebug "Deleting rpath #{rpath} in #{file}"
+    file.delete_rpath(rpath, strict: false)
+    codesign_patched_binary(file)
+  rescue MachO::MachOError
+    onoe <<~EOS
+      Failed deleting rpath #{rpath} in #{file}
+    EOS
+    raise
+  end
+
+  def codesign_patched_binary(file)
     return if MacOS.version < :big_sur
     return unless Hardware::CPU.arm?
 

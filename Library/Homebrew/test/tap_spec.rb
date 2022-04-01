@@ -23,6 +23,7 @@ describe Tap do
   end
 
   def setup_tap_files
+    formula_file.dirname.mkpath
     formula_file.write <<~RUBY
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
@@ -41,6 +42,8 @@ describe Tap do
     JSON
 
     %w[audit_exceptions style_exceptions].each do |exceptions_directory|
+      (path/exceptions_directory).mkpath
+
       (path/"#{exceptions_directory}/formula_list.json").write <<~JSON
         [ "foo", "bar" ]
       JSON
@@ -153,7 +156,7 @@ describe Tap do
     expect(homebrew_foo_tap.issues_url).to eq("https://github.com/Homebrew/homebrew-foo/issues")
 
     (Tap::TAP_DIRECTORY/"someone/homebrew-no-git").mkpath
-    expect(described_class.new("someone", "no-git").issues_url).to be nil
+    expect(described_class.new("someone", "no-git").issues_url).to be_nil
   ensure
     path.parent.rmtree
   end
@@ -195,13 +198,55 @@ describe Tap do
     end
 
     it "returns nil if the Tap is not a Git repository" do
-      expect(homebrew_foo_tap.remote).to be nil
+      expect(homebrew_foo_tap.remote).to be_nil
     end
 
     it "returns nil if Git is not available" do
       setup_git_repo
       allow(Utils::Git).to receive(:available?).and_return(false)
-      expect(homebrew_foo_tap.remote).to be nil
+      expect(homebrew_foo_tap.remote).to be_nil
+    end
+  end
+
+  describe "#remote_repo" do
+    it "returns the remote https repository" do
+      setup_git_repo
+
+      expect(homebrew_foo_tap.remote_repo).to eq("Homebrew/homebrew-foo")
+      expect { described_class.new("Homebrew", "bar").remote_repo }.to raise_error(TapUnavailableError)
+
+      services_tap = described_class.new("Homebrew", "services")
+      services_tap.path.mkpath
+      services_tap.path.cd do
+        system "git", "init"
+        system "git", "remote", "add", "origin", "https://github.com/Homebrew/homebrew-bar"
+      end
+      expect(services_tap.remote_repo).to eq("Homebrew/homebrew-bar")
+    end
+
+    it "returns the remote ssh repository" do
+      setup_git_repo
+
+      expect(homebrew_foo_tap.remote_repo).to eq("Homebrew/homebrew-foo")
+      expect { described_class.new("Homebrew", "bar").remote_repo }.to raise_error(TapUnavailableError)
+
+      services_tap = described_class.new("Homebrew", "services")
+      services_tap.path.mkpath
+      services_tap.path.cd do
+        system "git", "init"
+        system "git", "remote", "add", "origin", "git@github.com:Homebrew/homebrew-bar"
+      end
+      expect(services_tap.remote_repo).to eq("Homebrew/homebrew-bar")
+    end
+
+    it "returns nil if the Tap is not a Git repository" do
+      expect(homebrew_foo_tap.remote_repo).to be_nil
+    end
+
+    it "returns nil if Git is not available" do
+      setup_git_repo
+      allow(Utils::Git).to receive(:available?).and_return(false)
+      expect(homebrew_foo_tap.remote_repo).to be_nil
     end
   end
 
@@ -210,9 +255,7 @@ describe Tap do
     setup_git_repo
 
     expect(homebrew_foo_tap.git_head).to eq("0453e16c8e3fac73104da50927a86221ca0740c2")
-    expect(homebrew_foo_tap.git_short_head).to eq("0453")
     expect(homebrew_foo_tap.git_last_commit).to match(/\A\d+ .+ ago\Z/)
-    expect(homebrew_foo_tap.git_last_commit_date).to eq("2017-01-22")
   end
 
   specify "#private?" do
@@ -244,6 +287,33 @@ describe Tap do
       expect {
         already_tapped_tap.install clone_target: wrong_remote
       }.to raise_error(TapRemoteMismatchError)
+    end
+
+    it "raises an error when the remote for Homebrew/core doesn't match HOMEBREW_CORE_GIT_REMOTE" do
+      core_tap = described_class.fetch("Homebrew", "core")
+      wrong_remote = "#{Homebrew::EnvConfig.core_git_remote}-oops"
+      expect {
+        core_tap.install clone_target: wrong_remote
+      }.to raise_error(TapCoreRemoteMismatchError)
+    end
+
+    it "raises an error when run `brew tap --custom-remote` without a custom remote (already installed)" do
+      setup_git_repo
+      already_tapped_tap = described_class.new("Homebrew", "foo")
+      expect(already_tapped_tap).to be_installed
+
+      expect {
+        already_tapped_tap.install clone_target: nil, custom_remote: true
+      }.to raise_error(TapNoCustomRemoteError)
+    end
+
+    it "raises an error when run `brew tap --custom-remote` without a custom remote (not installed)" do
+      not_tapped_tap = described_class.new("Homebrew", "bar")
+      expect(not_tapped_tap).not_to be_installed
+
+      expect {
+        not_tapped_tap.install clone_target: nil, custom_remote: true
+      }.to raise_error(TapNoCustomRemoteError)
     end
 
     describe "force_auto_update" do
@@ -380,11 +450,11 @@ describe Tap do
   specify "#config" do
     setup_git_repo
 
-    expect(homebrew_foo_tap.config["foo"]).to be nil
+    expect(homebrew_foo_tap.config["foo"]).to be_nil
     homebrew_foo_tap.config["foo"] = "bar"
     expect(homebrew_foo_tap.config["foo"]).to eq("bar")
     homebrew_foo_tap.config["foo"] = nil
-    expect(homebrew_foo_tap.config["foo"]).to be nil
+    expect(homebrew_foo_tap.config["foo"]).to be_nil
   end
 
   describe "#each" do
@@ -476,6 +546,7 @@ describe Tap do
     specify "files" do
       path = Tap::TAP_DIRECTORY/"homebrew/homebrew-core"
       formula_file = core_tap.formula_dir/"foo.rb"
+      core_tap.formula_dir.mkpath
       formula_file.write <<~RUBY
         class Foo < Formula
           url "https://brew.sh/foo-1.0.tar.gz"
@@ -491,6 +562,7 @@ describe Tap do
         style_exceptions/formula_hash.json
         pypi_formula_mappings.json
       ].each do |file|
+        (path/file).dirname.mkpath
         (path/file).write formula_list_file_json
       end
 

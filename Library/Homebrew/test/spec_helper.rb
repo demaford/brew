@@ -3,24 +3,20 @@
 
 if ENV["HOMEBREW_TESTS_COVERAGE"]
   require "simplecov"
+  require "simplecov-cobertura"
 
-  formatters = [SimpleCov::Formatter::HTMLFormatter]
-  if ENV["HOMEBREW_CODECOV_TOKEN"] && RUBY_PLATFORM[/darwin/]
-    require "codecov"
-
-    formatters << SimpleCov::Formatter::Codecov
-
-    if ENV["TEST_ENV_NUMBER"]
-      SimpleCov.at_exit do
-        result = SimpleCov.result
-        result.format! if ParallelTests.number_of_running_processes <= 1
-      end
-    end
-
-    ENV["CODECOV_TOKEN"] = ENV["HOMEBREW_CODECOV_TOKEN"]
-  end
-
+  formatters = [
+    SimpleCov::Formatter::HTMLFormatter,
+    SimpleCov::Formatter::CoberturaFormatter,
+  ]
   SimpleCov.formatters = SimpleCov::Formatter::MultiFormatter.new(formatters)
+
+  if RUBY_PLATFORM[/darwin/] && ENV["TEST_ENV_NUMBER"]
+    SimpleCov.at_exit do
+      result = SimpleCov.result
+      result.format! if ParallelTests.number_of_running_processes <= 1
+    end
+  end
 end
 
 require_relative "../warnings"
@@ -81,25 +77,35 @@ RSpec.configure do |config|
     c.max_formatted_output_length = 200
   end
 
-  # Use rspec-retry in CI.
+  # Use rspec-retry to handle flaky tests.
+  config.default_sleep_interval = 1
+
+  # Don't make retries as noisy unless in CI.
   if ENV["CI"]
     config.verbose_retry = true
     config.display_try_failure_messages = true
-    config.default_retry_count = 2
-    config.default_sleep_interval = 1
+  end
 
-    config.around(:each, :integration_test) do |example|
-      example.metadata[:timeout] ||= 120
-      example.run
-    end
+  # Don't want the nicer default retry behaviour when using BuildPulse to
+  # identify flaky tests.
+  config.default_retry_count = 2 unless ENV["BUILDPULSE"]
 
-    config.around(:each, :needs_network) do |example|
-      example.metadata[:timeout] ||= 120
-      example.metadata[:retry] ||= 4
-      example.metadata[:retry_wait] ||= 2
-      example.metadata[:exponential_backoff] ||= true
-      example.run
-    end
+  # Increase timeouts for integration tests (as we expect them to take longer).
+  config.around(:each, :integration_test) do |example|
+    example.metadata[:timeout] ||= 120
+    example.run
+  end
+
+  config.around(:each, :needs_network) do |example|
+    example.metadata[:timeout] ||= 120
+
+    # Don't want the nicer default retry behaviour when using BuildPulse to
+    # identify flaky tests.
+    example.metadata[:retry] ||= 4 unless ENV["BUILDPULSE"]
+
+    example.metadata[:retry_wait] ||= 2
+    example.metadata[:exponential_backoff] ||= true
+    example.run
   end
 
   # Never truncate output objects.
@@ -140,7 +146,7 @@ RSpec.configure do |config|
   end
 
   config.before(:each, :needs_svn) do
-    svn_shim = HOMEBREW_SHIMS_PATH/"scm/svn"
+    svn_shim = HOMEBREW_SHIMS_PATH/"shared/svn"
     skip "Subversion is not installed." unless quiet_system svn_shim, "--version"
 
     svn_shim_path = Pathname(Utils.popen_read(svn_shim, "--homebrew=print-path").chomp.presence)
@@ -161,6 +167,13 @@ RSpec.configure do |config|
     ENV["PATH"] = PATH.new(ENV["PATH"])
                       .append(svn.dirname)
                       .append(svnadmin.dirname)
+  end
+
+  config.before(:each, :needs_homebrew_curl) do
+    ENV["HOMEBREW_CURL"] = ENV["HOMEBREW_BREWED_CURL_PATH"]
+    skip "A `curl` with TLS 1.3 support is required." unless curl_supports_tls13?
+  rescue FormulaUnavailableError
+    skip "No `curl` formula is available."
   end
 
   config.before(:each, :needs_unzip) do
@@ -185,8 +198,11 @@ RSpec.configure do |config|
     Formula.clear_cache
     Keg.clear_cache
     Tab.clear_cache
+    Dependency.clear_cache
+    Requirement.clear_cache
     FormulaInstaller.clear_attempted
     FormulaInstaller.clear_installed
+    FormulaInstaller.clear_fetched
 
     TEST_DIRECTORIES.each(&:mkpath)
 
@@ -198,12 +214,14 @@ RSpec.configure do |config|
 
     @__stdout = $stdout.clone
     @__stderr = $stderr.clone
+    @__stdin = $stdin.clone
 
     begin
       if (example.metadata.keys & [:focus, :byebug]).empty? && !ENV.key?("HOMEBREW_VERBOSE_TESTS")
         $stdout.reopen(File::NULL)
         $stderr.reopen(File::NULL)
       end
+      $stdin.reopen(File::NULL)
 
       begin
         timeout = example.metadata.fetch(:timeout, 60)
@@ -220,8 +238,10 @@ RSpec.configure do |config|
 
       $stdout.reopen(@__stdout)
       $stderr.reopen(@__stderr)
+      $stdin.reopen(@__stdin)
       @__stdout.close
       @__stderr.close
+      @__stdin.close
 
       Formulary.clear_cache
       Tap.clear_cache
@@ -229,6 +249,8 @@ RSpec.configure do |config|
       Formula.clear_cache
       Keg.clear_cache
       Tab.clear_cache
+      Dependency.clear_cache
+      Requirement.clear_cache
 
       FileUtils.rm_rf [
         *TEST_DIRECTORIES,

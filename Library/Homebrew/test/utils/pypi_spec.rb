@@ -6,11 +6,11 @@ require "utils/pypi"
 describe PyPI do
   let(:package_url) do
     "https://files.pythonhosted.org/packages/b0/3f/2e1dad67eb172b6443b5eb37eb885a054a55cfd733393071499514140282/"\
-    "snakemake-5.29.0.tar.gz"
+      "snakemake-5.29.0.tar.gz"
   end
   let(:old_package_url) do
     "https://files.pythonhosted.org/packages/6f/c4/da52bfdd6168ea46a0fe2b7c983b6c34c377a8733ec177cc00b197a96a9f/"\
-    "snakemake-5.28.0.tar.gz"
+      "snakemake-5.28.0.tar.gz"
   end
 
   describe PyPI::Package do
@@ -93,7 +93,7 @@ describe PyPI do
         expect(package_with_version.pypi_info).to eq ["snakemake", old_package_url, old_package_checksum, "5.28.0"]
       end
 
-      it "gets pypi info from a package name with overriden version" do
+      it "gets pypi info from a package name with overridden version" do
         expected_result = ["snakemake", package_url, package_checksum, "5.29.0"]
         expect(package_with_version.pypi_info(version: "5.29.0")).to eq expected_result
       end
@@ -107,7 +107,7 @@ describe PyPI do
         expect(package_from_url.pypi_info).to eq ["snakemake", package_url, package_checksum, "5.29.0"]
       end
 
-      it "gets pypi info from a url with overriden version" do
+      it "gets pypi info from a url with overridden version" do
         expected_result = ["snakemake", old_package_url, old_package_checksum, "5.28.0"]
         expect(package_from_url.pypi_info(version: "5.28.0")).to eq expected_result
       end
@@ -137,19 +137,19 @@ describe PyPI do
 
     describe ".same_package?" do
       it "returns false for different packages" do
-        expect(package.same_package?(other_package)).to eq false
+        expect(package.same_package?(other_package)).to be false
       end
 
       it "returns true for the same package" do
-        expect(package.same_package?(package_with_version)).to eq true
+        expect(package.same_package?(package_with_version)).to be true
       end
 
       it "returns true for the same package with different versions" do
-        expect(package_with_version.same_package?(package_with_different_version)).to eq true
+        expect(package_with_version.same_package?(package_with_different_version)).to be true
       end
 
       it "returns true for the same package with different capitalization" do
-        expect(package.same_package?(package_with_different_capitalization)).to eq true
+        expect(package.same_package?(package_with_different_capitalization)).to be true
       end
     end
 
@@ -174,11 +174,11 @@ describe PyPI do
     end
 
     it "returns nil for invalid versions" do
-      expect(described_class.update_pypi_url(old_package_url, "0.0.0")).to eq nil
+      expect(described_class.update_pypi_url(old_package_url, "0.0.0")).to be_nil
     end
 
     it "returns nil for non-pypi urls" do
-      expect(described_class.update_pypi_url("https://brew.sh/foo-1.0.tgz", "1.1")).to eq nil
+      expect(described_class.update_pypi_url("https://brew.sh/foo-1.0.tgz", "1.1")).to be_nil
     end
   end
 end

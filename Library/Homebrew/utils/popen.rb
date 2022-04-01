@@ -28,7 +28,7 @@ module Utils
 
       yield pipe
       pipe.close_write
-      IO.select([pipe])
+      pipe.wait_readable
 
       # Capture the rest of the output
       output += pipe.read
@@ -50,7 +50,7 @@ module Utils
 
         yield pipe
       else
-        options[:err] ||= :close unless ENV["HOMEBREW_STDERR"]
+        options[:err] ||= "/dev/null" unless ENV["HOMEBREW_STDERR"]
         begin
           exec(*args, options)
         rescue Errno::ENOENT

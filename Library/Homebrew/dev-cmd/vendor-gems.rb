@@ -1,7 +1,6 @@
 # typed: false
 # frozen_string_literal: true
 
-require "formula"
 require "cli/parser"
 
 module Homebrew
@@ -28,6 +27,8 @@ module Homebrew
     args = vendor_gems_args.parse
 
     Homebrew.install_bundler!
+
+    ENV["BUNDLE_WITH"] = "sorbet"
 
     ohai "cd #{HOMEBREW_LIBRARY_PATH}"
     HOMEBREW_LIBRARY_PATH.cd do

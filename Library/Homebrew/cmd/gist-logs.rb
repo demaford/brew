@@ -85,22 +85,26 @@ module Homebrew
 
   # Causes some terminals to display secure password entry indicators.
   def noecho_gets
-    system "stty -echo"
+    system "stty", "-echo"
     result = $stdin.gets
-    system "stty echo"
+    system "stty", "echo"
     puts
     result
   end
 
-  def load_logs(dir)
+  def load_logs(dir, basedir = dir)
     logs = {}
     if dir.exist?
       dir.children.sort.each do |file|
-        contents = file.size? ? file.read : "empty log"
-        # small enough to avoid GitHub "unicorn" page-load-timeout errors
-        max_file_size = 1_000_000
-        contents = truncate_text_to_approximate_size(contents, max_file_size, front_weight: 0.2)
-        logs[file.basename.to_s] = { content: contents }
+        if file.directory?
+          logs.merge! load_logs(file, basedir)
+        else
+          contents = file.size? ? file.read : "empty log"
+          # small enough to avoid GitHub "unicorn" page-load-timeout errors
+          max_file_size = 1_000_000
+          contents = truncate_text_to_approximate_size(contents, max_file_size, front_weight: 0.2)
+          logs[file.relative_path_from(basedir).to_s.tr("/", ":")] = { content: contents }
+        end
       end
     end
     odie "No logs." if logs.empty?

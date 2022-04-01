@@ -35,15 +35,27 @@ module OS
     @kernel_version ||= Version.new(Utils.safe_popen_read("uname", "-r").chomp)
   end
 
+  # Get the kernel name.
+  #
+  # @api public
+  sig { returns(String) }
+  def self.kernel_name
+    @kernel_name ||= Utils.safe_popen_read("uname", "-s").chomp
+  end
+
   ::OS_VERSION = ENV["HOMEBREW_OS_VERSION"]
+
+  CI_GLIBC_VERSION = "2.23"
+  CI_OS_VERSION = "Ubuntu 16.04"
 
   if OS.mac?
     require "os/mac"
     # Don't tell people to report issues on unsupported configurations.
-    if !OS::Mac.prerelease? &&
-       !OS::Mac.outdated_release? &&
+    if !OS::Mac.version.prerelease? &&
+       !OS::Mac.version.outdated_release? &&
        ARGV.none? { |v| v.start_with?("--cc=") } &&
-       ENV["HOMEBREW_PREFIX"] == "/usr/local"
+       (ENV["HOMEBREW_PREFIX"] == HOMEBREW_DEFAULT_PREFIX ||
+       (ENV["HOMEBREW_PREFIX"] == HOMEBREW_MACOS_ARM_DEFAULT_PREFIX && Hardware::CPU.arm?))
       ISSUES_URL = "https://docs.brew.sh/Troubleshooting"
     end
     PATH_OPEN = "/usr/bin/open"

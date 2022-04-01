@@ -4,7 +4,7 @@
 require "language/node"
 
 describe Language::Node do
-  let(:npm_pack_cmd) { "npm pack --ignore-scripts" }
+  let(:npm_pack_cmd) { ["npm", "pack", "--ignore-scripts"] }
 
   describe "#setup_npm_environment" do
     it "calls prepend_path when node formula exists only during the first call" do
@@ -16,7 +16,7 @@ describe Language::Node do
       described_class.instance_variable_set(:@env_set, false)
       expect(described_class.setup_npm_environment).to be_nil
 
-      expect(described_class.instance_variable_get(:@env_set)).to eq(true)
+      expect(described_class.instance_variable_get(:@env_set)).to be(true)
       expect(ENV).not_to receive(:prepend_path)
       expect(described_class.setup_npm_environment).to be_nil
     end
@@ -31,7 +31,7 @@ describe Language::Node do
       mktmpdir.cd do
         path = Pathname("package.json")
         path.atomic_write("{\"scripts\":{\"prepare\": \"ls\", \"prepack\": \"ls\", \"test\": \"ls\"}}")
-        allow(Utils).to receive(:popen_read).with(npm_pack_cmd).and_return(`echo pack.tgz`)
+        allow(Utils).to receive(:popen_read).with(*npm_pack_cmd).and_return(`echo pack.tgz`)
         described_class.pack_for_installation
         expect(path.read).not_to include("prepare")
         expect(path.read).not_to include("prepack")
@@ -44,19 +44,19 @@ describe Language::Node do
     npm_install_arg = Pathname("libexec")
 
     it "raises error with non zero exitstatus" do
-      allow(Utils).to receive(:popen_read).with(npm_pack_cmd).and_return(`false`)
+      allow(Utils).to receive(:popen_read).with(*npm_pack_cmd).and_return(`false`)
       expect { described_class.std_npm_install_args(npm_install_arg) }.to \
         raise_error("npm failed to pack #{Dir.pwd}")
     end
 
     it "raises error with empty npm pack output" do
-      allow(Utils).to receive(:popen_read).with(npm_pack_cmd).and_return(`true`)
+      allow(Utils).to receive(:popen_read).with(*npm_pack_cmd).and_return(`true`)
       expect { described_class.std_npm_install_args(npm_install_arg) }.to \
         raise_error("npm failed to pack #{Dir.pwd}")
     end
 
     it "does not raise error with a zero exitstatus" do
-      allow(Utils).to receive(:popen_read).with(npm_pack_cmd).and_return(`echo pack.tgz`)
+      allow(Utils).to receive(:popen_read).with(*npm_pack_cmd).and_return(`echo pack.tgz`)
       resp = described_class.std_npm_install_args(npm_install_arg)
       expect(resp).to include("--prefix=#{npm_install_arg}", "#{Dir.pwd}/pack.tgz")
     end

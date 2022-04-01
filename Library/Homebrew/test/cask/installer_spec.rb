@@ -4,7 +4,7 @@
 describe Cask::Installer, :cask do
   describe "install" do
     let(:empty_depends_on_stub) {
-      double(formula: [], cask: [], macos: nil, arch: nil, x11: nil)
+      double(formula: [], cask: [], macos: nil, arch: nil)
     }
 
     it "downloads and installs a nice fresh Cask" do
@@ -16,7 +16,7 @@ describe Cask::Installer, :cask do
       expect(caffeine.config.appdir.join("Caffeine.app")).to be_a_directory
     end
 
-    it "works with dmg-based Casks" do
+    it "works with HFS+ dmg-based Casks" do
       asset = Cask::CaskLoader.load(cask_path("container-dmg"))
 
       described_class.new(asset).install

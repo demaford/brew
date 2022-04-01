@@ -1,4 +1,4 @@
-# typed: false
+# typed: true
 # frozen_string_literal: true
 
 module Cask
@@ -19,7 +19,7 @@ module Cask
 
       MAJOR_MINOR_PATCH_REGEX = /^([^.,:]+)(?:.([^.,:]+)(?:.([^.,:]+))?)?/.freeze
 
-      INVALID_CHARACTERS = /[^0-9a-zA-Z.,:\-_]/.freeze
+      INVALID_CHARACTERS = /[^0-9a-zA-Z.,:\-_+ ]/.freeze
 
       class << self
         private
@@ -68,10 +68,13 @@ module Cask
       def initialize(raw_version)
         @raw_version = raw_version
         super(raw_version.to_s)
+
+        invalid = invalid_characters
+        raise TypeError, "#{raw_version} contains invalid characters: #{invalid.uniq.join}!" if invalid.present?
       end
 
       def invalid_characters
-        return [] if latest?
+        return [] if raw_version.blank? || latest?
 
         raw_version.scan(INVALID_CHARACTERS)
       end
@@ -130,6 +133,12 @@ module Cask
       end
 
       # @api public
+      sig { returns(T::Array[Version]) } # Only top-level T.self_type is supported https://sorbet.org/docs/self-type
+      def csv
+        split(",").map(&self.class.method(:new))
+      end
+
+      # @api public
       sig { returns(T.self_type) }
       def before_comma
         version { split(",", 2).first }
@@ -144,12 +153,14 @@ module Cask
       # @api public
       sig { returns(T.self_type) }
       def before_colon
+        odeprecated "Cask::DSL::Version#before_colon", "Cask::DSL::Version#csv"
         version { split(":", 2).first }
       end
 
       # @api public
       sig { returns(T.self_type) }
       def after_colon
+        odeprecated "Cask::DSL::Version#after_colon", "Cask::DSL::Version#csv"
         version { split(":", 2).second }
       end
 

@@ -36,7 +36,7 @@ module Homebrew
               f = Formulary.from_rack(rack)
               if f.pinned?
                 onoe "#{f.full_name} is pinned. You must unpin it to uninstall."
-                next
+                break # exit keg loop and move on to next rack
               end
             rescue
               nil
@@ -137,7 +137,7 @@ module Homebrew
 
       def are_required_by_deps
         "#{"is".pluralize(reqs.count)} required by #{deps.to_sentence}, " \
-        "which #{"is".pluralize(deps.count)} currently installed"
+          "which #{"is".pluralize(deps.count)} currently installed"
       end
     end
 

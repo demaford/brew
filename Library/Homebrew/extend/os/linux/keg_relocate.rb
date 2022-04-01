@@ -6,14 +6,16 @@ require "compilers"
 class Keg
   def relocate_dynamic_linkage(relocation)
     # Patching the dynamic linker of glibc breaks it.
-    return if name == "glibc"
+    return if name.match? Version.formula_optionally_versioned_regex(:glibc)
 
-    # Patching patchelf using itself fails with "Text file busy" or SIGBUS.
+    # Patching patchelf fails with "Text file busy" or SIGBUS.
     return if name == "patchelf"
+
+    old_prefix, new_prefix = relocation.replacement_pair_for(:prefix)
 
     elf_files.each do |file|
       file.ensure_writable do
-        change_rpath(file, relocation.old_prefix, relocation.new_prefix)
+        change_rpath(file, old_prefix, new_prefix)
       end
     end
   end
@@ -79,15 +81,11 @@ class Keg
     elf_files
   end
 
-  def self.relocation_formulae
-    ["patchelf"]
-  end
-
   def self.bottle_dependencies
     @bottle_dependencies ||= begin
       formulae = relocation_formulae
       gcc = Formulary.factory(CompilerSelector.preferred_gcc)
-      if !Homebrew::EnvConfig.force_homebrew_on_linux? &&
+      if !Homebrew::EnvConfig.simulate_macos_on_linux? &&
          DevelopmentTools.non_apple_gcc_version("gcc") < gcc.version.to_i
         formulae += gcc.recursive_dependencies.map(&:name)
         formulae << gcc.name
